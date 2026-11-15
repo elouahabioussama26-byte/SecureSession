@@ -1,4 +1,4 @@
-import fakeredis.aioredis
+import fakeredis
 import httpx
 import pytest
 
@@ -7,7 +7,7 @@ from app.main import create_app
 
 @pytest.mark.asyncio
 async def test_session_api_login_list_revoke_and_logout():
-    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    redis = fakeredis.FakeAsyncRedis(decode_responses=True)
     application = create_app(redis_client=redis)
 
     try:

@@ -1,7 +1,7 @@
 import asyncio
 import hashlib
 
-import fakeredis.aioredis
+import fakeredis
 import pytest
 
 from app.session_service import SessionService
@@ -9,7 +9,7 @@ from app.session_service import SessionService
 
 @pytest.fixture
 async def redis_client():
-    client = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    client = fakeredis.FakeAsyncRedis(decode_responses=True)
     yield client
     await client.aclose()
 
