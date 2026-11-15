@@ -33,7 +33,7 @@ async def test_registration_login_session_management_and_logout():
                 assert account_hash["password_hash"] != "SecurePass123!"
                 first_session_id = registration.json()["session"]["session_id"]
 
-                # Duplicate usernames are not allowed.
+                # Duplicate usernames are not allowed (usernames are case-insensitive).
                 duplicate = await client.post(
                     "/api/accounts",
                     json={"username": "oussama", "password": "AnotherPass123!"},
@@ -53,7 +53,7 @@ async def test_registration_login_session_management_and_logout():
                 # A second login creates another independent active session.
                 login = await client.post(
                     "/api/sessions",
-                    json={"username": "OUS SAMA".replace(" ", ""), "password": "SecurePass123!"},
+                    json={"username": "OUSSAMA", "password": "SecurePass123!"},
                 )
                 assert login.status_code == 200
 
@@ -72,6 +72,8 @@ async def test_registration_login_session_management_and_logout():
 
                 invalid_after_logout = await client.get("/api/sessions/me")
                 assert invalid_after_logout.status_code == 401
+    finally:
+        await redis.aclose()
 
 
 @pytest.mark.asyncio
@@ -81,7 +83,10 @@ async def test_registration_validates_password_length():
     try:
         async with application.router.lifespan_context(application):
             transport = httpx.ASGITransport(app=application)
-            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
                 response = await client.post(
                     "/api/accounts",
                     json={"username": "oussama", "password": "short"},
