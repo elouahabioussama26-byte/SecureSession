@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SecureSession API",
-    "description": "Basic API checks for the Redis-backed SecureSession project. Run Create session first; Postman stores the cookie automatically when cookie handling is enabled.",
+    "description": "Registration, authentication and session-management requests. Keep Postman's cookie jar enabled so the HttpOnly cookie is stored automatically.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -13,13 +13,26 @@
       }
     },
     {
-      "name": "Create session",
+      "name": "Create account",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"username\": \"oussama\"\n}",
+          "raw": "{\n  \"username\": \"oussama\",\n  \"password\": \"SecurePass123!\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/accounts"
+      }
+    },
+    {
+      "name": "Sign in",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"oussama\",\n  \"password\": \"SecurePass123!\"\n}",
           "options": { "raw": { "language": "json" } }
         },
         "url": "{{baseUrl}}/api/sessions"

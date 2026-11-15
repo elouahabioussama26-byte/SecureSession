@@ -3,34 +3,37 @@
 **Centralized User Session Management System**  
 University NoSQL project — P13: Développement d'un système sécurisé de gestion des sessions utilisateurs.
 
-SecureSession is a learning application that demonstrates how Redis can manage user sessions independently from the web application's local process state. The backend is built with FastAPI and Python; Redis is the session store; a lightweight browser dashboard makes the operations visible.
+SecureSession is a learning application for account registration, password authentication and centralized session management with Redis. The backend uses FastAPI and Python, while Redis stores account records and session data. A responsive browser dashboard lets users review and revoke active sessions.
 
-> **Educational scope:** authentication is simulated. A user enters a username to obtain a session; this project does not verify a real password or connect to an identity provider. It is a university prototype, not a production identity system.
+> **Educational scope:** this is a university prototype, not a production identity provider. It demonstrates account credentials and session management, but does not include email verification, password reset, MFA, CSRF tokens, or production-grade rate limiting.
 
 ## Features
 
-- Create a session with a cryptographically random opaque token.
-- Keep the token in an HttpOnly cookie; store only its SHA-256 digest in Redis.
+- Create an account with a unique username and password.
+- Hash passwords with Argon2id before storing them in Redis.
+- Sign in using username and password.
+- Store random opaque session tokens in HttpOnly cookies; Redis stores only SHA-256 token digests.
 - Validate the current session on protected API routes.
-- List a user's active sessions and see the current session.
-- Revoke another active session or sign out the current session.
+- View account details, active-session count and current-session expiry.
+- List active devices and revoke individual sessions.
+- Sign out and revoke the current session.
 - Expire sessions automatically using Redis TTL.
-- Track users and session expiration order with Redis Sets and Sorted Sets.
+- Track users and session expiry order with Redis Sets and Sorted Sets.
 - Publish session-created, revoked and expired events with Redis Pub/Sub.
-- Demonstrate 20 simultaneous fictitious sessions for one user.
-- Interactive dashboard, FastAPI Swagger documentation and automated tests.
+- Demonstrate 20 simultaneous sessions for a demo account.
+- Responsive dashboard, FastAPI Swagger documentation and automated tests.
 
 ## Architecture
 
 ```text
 Browser (HTML / CSS / JavaScript)
             |
-            | HTTP + HttpOnly session cookie
+            | HTTPS/HTTP + HttpOnly session cookie
             v
         FastAPI
-            |
-       SessionService
-            |
+        /     \
+ AccountService  SessionService
+        \     /
          redis-py
             |
             v
@@ -41,17 +44,18 @@ Browser (HTML / CSS / JavaScript)
 
 | Redis key | Type | Purpose |
 |---|---|---|
+| `account:<username>` | Hash | Username, Argon2 password hash and account creation time |
 | `session:<sha256-token>` | Hash | Session ID, user, creation and expiration time, client metadata |
 | `session-id:<session-uuid>` | String with TTL | Maps a session ID to its token digest for revocation |
 | `user:<username>:sessions` | Sorted Set | Session IDs scored by expiration timestamp |
 | `secure_session:connected_users` | Set | Unique users with active sessions |
 | `secure_session:events` | Pub/Sub channel | Live created, revoked and expired events |
 
-The raw token is never stored in Redis. The browser receives it as a cookie with HttpOnly enabled. The cookie uses SameSite=Lax by default. Set Secure=true when serving the app over HTTPS.
+The raw password is never stored. Argon2id hashes are stored in the account Hash. The raw session token is never stored in Redis; the browser receives it as an HttpOnly cookie.
 
 ### Redis features demonstrated
 
-- **Hashes:** `HSET`, `HGETALL` for session metadata.
+- **Hashes:** `HSET`, `HGETALL` for account and session metadata.
 - **Expiration:** `EXPIRE`, `TTL` and key expiration.
 - **Sorted Sets:** `ZADD`, `ZRANGEBYSCORE`, `ZREM` for per-user session indexes.
 - **Sets:** `SADD`, `SREM`, `SMEMBERS` for connected-user tracking.
@@ -69,7 +73,7 @@ The raw token is never stored in Redis. The browser receives it as a cookie with
 
 Your existing Redis container exposes port 6379. Reuse it; do not create another Redis container on that same port.
 
-1. Clone the repository:
+1. Clone or update the repository:
 
 ```bash
 git clone https://github.com/elouahabioussama26-byte/SecureSession.git
@@ -92,13 +96,6 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-If venv support is missing on Ubuntu:
-
-```bash
-sudo apt update
-sudo apt install python3-venv
-```
-
 4. Install dependencies and configure the environment:
 
 ```bash
@@ -106,7 +103,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-The example configuration uses `redis://localhost:6379/0`, matching the existing container.
+The example configuration uses `redis://localhost:6379/0`, matching the existing container. If `.env` already exists, do not overwrite it; check that its `REDIS_URL` is correct.
 
 5. Start the API:
 
@@ -120,81 +117,89 @@ uvicorn app.main:app --reload
 - Swagger UI: http://127.0.0.1:8000/docs
 - Health check: http://127.0.0.1:8000/api/health
 
-## Alternative: run the complete stack with Docker Compose
+## Account usage
 
-The Compose configuration starts its own Redis container and the API. Its Redis port is mapped to host port **6380**, so it does not conflict with your existing container on port 6379.
+Open the dashboard and select **Create account**. Choose a username and a password of at least 8 characters. Successful registration automatically signs you in.
 
-```bash
-docker compose up --build
-```
+For an existing account, select **Sign in** and enter the same username and password.
 
-Open http://127.0.0.1:8000. To stop the stack:
-
-```bash
-docker compose down
-```
-
-To also delete the Compose Redis data volume (destructive):
-
-```bash
-docker compose down -v
-```
-
-Do not use the Compose mode and the existing-Redis mode interchangeably without checking which Redis URL the API is using.
+Passwords are hashed with Argon2id. Duplicate usernames are rejected. Usernames are normalized to lowercase.
 
 ## Demonstrate 20 simultaneous sessions
 
-With the virtual environment active and the API stopped or running, execute:
+With the virtual environment active, execute:
 
 ```bash
 python scripts/seed_demo.py
 ```
 
-The script creates exactly 20 fictitious sessions for `demo_user`. Then open the dashboard and sign in using the username `demo_user`. The dashboard lists the seeded sessions; try revoking one. The seeder does not print or expose session tokens.
+The script creates the demo account if it does not yet exist and adds 20 fictitious sessions. Sign in using:
 
-The script first removes existing sessions indexed for the demo user, then creates 20 new sessions. It does not delete other users' data.
+- Username: `demo_user`
+- Password on first creation: `DemoPass123!`
+
+If that account already exists, the script preserves its existing password rather than resetting it. The script removes older sessions indexed for this demo user, then creates 20 new sessions; it does not delete other users' data.
 
 ## Tests
 
 Run:
 
 ```bash
-pytest -v
+python -m pytest -v
 ```
 
-The tests use fakeredis and do not require a separate Redis server. They cover token-digest storage, session validation, listing, revocation, user isolation and 20 simultaneous sessions.
+Tests use fakeredis and do not require a separate Redis server. They cover password hashing, authentication, duplicate account rejection, session validation, listing, revocation, user isolation and 20 simultaneous sessions.
 
 ## API endpoints
-
-All session-management endpoints require the HttpOnly cookie except session creation and health check.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/api/health` | Check API and Redis |
-| POST | `/api/sessions` | Simulate login and create session |
+| POST | `/api/accounts` | Register an account and create its first session |
+| POST | `/api/sessions` | Sign in and create a new session |
 | GET | `/api/sessions/me` | Validate and return current session |
 | GET | `/api/sessions` | List active sessions of current user |
 | DELETE | `/api/sessions/me` | Revoke current session and clear cookie |
 | DELETE | `/api/sessions/{session_id}` | Revoke a session belonging to current user |
 | GET | `/api/events` | Receive real-time session events (Server-Sent Events) |
 
-Example session creation request:
+Example registration:
+
+```http
+POST /api/accounts
+Content-Type: application/json
+
+{"username": "oussama", "password": "SecurePass123!"}
+```
+
+Example sign-in:
 
 ```http
 POST /api/sessions
 Content-Type: application/json
 
-{"username": "oussama"}
+{"username": "oussama", "password": "SecurePass123!"}
 ```
 
-The response includes safe session metadata. The raw session token is sent only in the HttpOnly cookie.
+Successful registration and sign-in set an HttpOnly session cookie. The JSON response does not expose the raw session token.
+
+## Security and limitations
+
+- Passwords are hashed with Argon2id. They are not encrypted or stored in plaintext.
+- Session tokens are generated with a cryptographically secure random generator; Redis stores only their SHA-256 digests.
+- Cookies use HttpOnly and SameSite=Lax. Enable `SESSION_COOKIE_SECURE=true` when using HTTPS.
+- For production, add HTTPS, CSRF protection appropriate to the deployment, rate limiting, email verification, password reset, MFA, account lockout policy, secure secret management and monitoring.
+- Do not expose this demo to the public internet or use it to protect real accounts.
+- Keep `.env` out of Git. Do not commit passwords, secrets or production tokens.
+- Redis Pub/Sub is ephemeral: subscribers only receive events while connected. It is used for live UI updates, not as a durable audit log.
+- The connected-users Set is an index for the demonstration; periodic cleanup or a more robust membership strategy would be needed for long-running production use.
 
 ## Project structure
 
 ```text
 SecureSession/
 ├── app/
-│   ├── __init__.py
+│   ├── auth_service.py
 │   ├── config.py
 │   ├── main.py
 │   ├── models.py
@@ -208,6 +213,8 @@ SecureSession/
 │   ├── index.html
 │   └── style.css
 ├── tests/
+│   ├── test_api.py
+│   ├── test_auth_service.py
 │   └── test_session_service.py
 ├── .env.example
 ├── Dockerfile
@@ -216,15 +223,6 @@ SecureSession/
 └── requirements.txt
 ```
 
-## Security and limitations
-
-- Authentication is deliberately simulated to match the project's simulated authentication scope. A username is not proof of identity.
-- Do not expose this demo to the public internet or use it to protect real accounts.
-- For a production system, integrate real authentication, enforce HTTPS, set the cookie Secure flag, add CSRF protection appropriate to the deployment, rate-limit authentication, define session and account policies, and monitor Redis access.
-- Keep `.env` out of Git. Do not commit passwords, secrets or production tokens.
-- Redis Pub/Sub is ephemeral: subscribers only receive events while connected. It is used here for live UI updates, not as a durable audit log.
-- The connected-users Set is an index for the demonstration; periodic cleanup or a more robust membership strategy would be needed for long-running production use.
-
 ## University deliverables
 
-This repository provides the source code, environment configuration, Redis data model, test/demo scripts and README installation instructions. Add your own screenshots, technical analysis, test evidence, limitations and AI-use declaration to the 8–12 page report, and prepare the oral presentation from the actual application you run.
+This repository provides the application source, environment configuration, Redis data model, API examples, test/demo scripts and README installation instructions. Add your own screenshots, technical analysis, test evidence, limitations and AI-use declaration to the 8–12 page report, and prepare the oral presentation from the actual application you run.

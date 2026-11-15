@@ -1,4 +1,4 @@
-"""Inspect SecureSession Redis keys without printing session token digests."""
+"""Inspect SecureSession Redis keys without printing password hashes or token digests."""
 import asyncio
 
 from redis.asyncio import Redis
@@ -10,7 +10,18 @@ async def main() -> None:
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     try:
         await redis.ping()
-        print("SecureSession Redis key overview")
+        print("SecureSession Redis data overview")
+
+        print("\nAccounts:")
+        async for key in redis.scan_iter(match="account:*", count=100):
+            account = await redis.hgetall(key)
+            print(
+                f"{key}: username={account.get('username', '?')} "
+                f"| created_at={account.get('created_at', '?')} "
+                "| password_hash=(stored, hidden)"
+            )
+
+        print("\nSessions:")
         async for key in redis.scan_iter(match="session:*", count=100):
             if key.startswith("session-id:"):
                 continue

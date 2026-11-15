@@ -13,8 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from app.auth_service import AccountAlreadyExists, AccountService
 from app.config import settings
-from app.models import LoginRequest
+from app.models import LoginRequest, RegisterRequest
 from app.redis_client import get_redis
 from app.session_service import SESSION_EVENTS_CHANNEL, SessionService
 
@@ -26,6 +27,10 @@ def get_service(redis: Redis = Depends(get_redis)) -> SessionService:
     return SessionService(redis, settings.session_ttl_seconds)
 
 
+def get_account_service(redis: Redis = Depends(get_redis)) -> AccountService:
+    return AccountService(redis)
+
+
 async def require_session(
     request: Request,
     service: SessionService = Depends(get_service),
@@ -35,9 +40,31 @@ async def require_session(
     if not session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="A valid session is required. Please log in.",
+            detail="Your session has expired. Please sign in again.",
         )
     return session
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=token,
+        max_age=settings.session_ttl_seconds,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+        path="/",
+    )
+
+
+def clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        path="/",
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+    )
 
 
 def create_app(redis_client: Redis | None = None) -> FastAPI:
@@ -67,7 +94,7 @@ def create_app(redis_client: Redis | None = None) -> FastAPI:
     application = FastAPI(
         title="SecureSession API",
         description="Centralized Redis-backed user session management.",
-        version="1.0.0",
+        version="1.1.0",
         lifespan=lifespan,
     )
     application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -101,30 +128,66 @@ def create_app(redis_client: Redis | None = None) -> FastAPI:
             )
         return {"status": "ok", "redis": "connected"}
 
-    @application.post("/api/sessions", status_code=status.HTTP_201_CREATED)
-    async def create_session(
-        payload: LoginRequest,
+    @application.post("/api/accounts", status_code=status.HTTP_201_CREATED)
+    async def register_account(
+        payload: RegisterRequest,
         request: Request,
         response: Response,
-        service: SessionService = Depends(get_service),
+        account_service: AccountService = Depends(get_account_service),
+        session_service: SessionService = Depends(get_service),
     ):
+        try:
+            account = await account_service.register(
+                payload.username,
+                payload.password.get_secret_value(),
+            )
+        except AccountAlreadyExists:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="That username is already registered. Try signing in instead.",
+            )
+
         client_ip = request.client.host if request.client else "unknown"
         user_agent = request.headers.get("user-agent", "")
-        token, session = await service.create_session(
-            payload.username,
+        token, session = await session_service.create_session(
+            account["username"],
             client_ip=client_ip,
             user_agent=user_agent,
         )
-        response.set_cookie(
-            key=settings.session_cookie_name,
-            value=token,
-            max_age=settings.session_ttl_seconds,
-            httponly=True,
-            secure=settings.session_cookie_secure,
-            samesite=settings.session_cookie_samesite,
-            path="/",
+        set_session_cookie(response, token)
+        return {
+            "message": "Account created successfully.",
+            "account": account,
+            "session": session,
+        }
+
+    @application.post("/api/sessions", status_code=status.HTTP_200_OK)
+    async def login(
+        payload: LoginRequest,
+        request: Request,
+        response: Response,
+        account_service: AccountService = Depends(get_account_service),
+        session_service: SessionService = Depends(get_service),
+    ):
+        account = await account_service.authenticate(
+            payload.username,
+            payload.password.get_secret_value(),
         )
-        return {"message": "Session created", "session": session}
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password.",
+            )
+
+        client_ip = request.client.host if request.client else "unknown"
+        user_agent = request.headers.get("user-agent", "")
+        token, session = await session_service.create_session(
+            account["username"],
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+        set_session_cookie(response, token)
+        return {"message": "Signed in successfully.", "account": account, "session": session}
 
     @application.get("/api/sessions/me")
     async def current_session(session: dict = Depends(require_session)):
@@ -147,13 +210,7 @@ def create_app(redis_client: Redis | None = None) -> FastAPI:
     ):
         await service.revoke_session(session["user_id"], session["session_id"])
         response = Response(status_code=status.HTTP_204_NO_CONTENT)
-        response.delete_cookie(
-            key=settings.session_cookie_name,
-            path="/",
-            httponly=True,
-            secure=settings.session_cookie_secure,
-            samesite=settings.session_cookie_samesite,
-        )
+        clear_session_cookie(response)
         return response
 
     @application.delete("/api/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -171,13 +228,7 @@ def create_app(redis_client: Redis | None = None) -> FastAPI:
 
         response = Response(status_code=status.HTTP_204_NO_CONTENT)
         if session_id == session["session_id"]:
-            response.delete_cookie(
-                key=settings.session_cookie_name,
-                path="/",
-                httponly=True,
-                secure=settings.session_cookie_secure,
-                samesite=settings.session_cookie_samesite,
-            )
+            clear_session_cookie(response)
         return response
 
     @application.get("/api/events")
@@ -185,13 +236,18 @@ def create_app(redis_client: Redis | None = None) -> FastAPI:
         request: Request,
         session: dict = Depends(require_session),
         redis: Redis = Depends(get_redis),
+        service: SessionService = Depends(get_service),
     ):
+        token = request.cookies.get(settings.session_cookie_name)
+
         async def event_generator() -> AsyncIterator[str]:
             pubsub = redis.pubsub()
             await pubsub.subscribe(SESSION_EVENTS_CHANNEL)
             try:
                 yield "retry: 3000\n\n"
                 while not await request.is_disconnected():
+                    if not await service.get_session(token):
+                        break
                     message = await pubsub.get_message(
                         ignore_subscribe_messages=True,
                         timeout=1.0,
