@@ -19,6 +19,7 @@ let currentSessionId = null;
 let currentUsername = null;
 let eventSource = null;
 let toastTimer = null;
+let checkingSession = false;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -32,7 +33,11 @@ async function api(path, options = {}) {
   if (response.status === 204) return null;
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = typeof data.detail === "string" ? data.detail : "Something went wrong. Please try again.";
+    const message = typeof data.detail === "string"
+      ? data.detail
+      : Array.isArray(data.detail)
+        ? data.detail.map((item) => item.msg || "Invalid input").join(" ")
+        : "Something went wrong. Please try again.";
     throw new Error(message);
   }
   return data;
@@ -162,8 +167,17 @@ function connectEvents() {
       // Ignore malformed events; the next event can still be processed.
     }
   };
-  eventSource.onerror = () => {
-    // EventSource retries automatically if the connection is interrupted.
+  eventSource.onerror = async () => {
+    // EventSource reconnects automatically. Check whether this session was revoked.
+    if (checkingSession || dashboardScreen.hidden) return;
+    checkingSession = true;
+    try {
+      await api("/api/sessions/me");
+    } catch (_) {
+      showAuth("Your session ended. Please sign in again.");
+    } finally {
+      checkingSession = false;
+    }
   };
 }
 
@@ -322,7 +336,8 @@ async function performLogout() {
   try {
     await api("/api/sessions/me", { method: "DELETE" });
     logoutDialog.close();
-    showAuth("You have been signed out successfully.");
+    showAuth();
+    showToast("You have been signed out successfully.");
   } catch (error) {
     logoutDialog.close();
     showToast(error.message, "error");
