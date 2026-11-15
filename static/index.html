@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101a2c">
+  <title>SecureSession — Session Control Center</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/">
+        <span class="brand-mark">S</span>
+        <span><strong>SecureSession</strong><small>SESSION CONTROL CENTER</small></span>
+      </a>
+      <div class="side-label">WORKSPACE</div>
+      <a class="nav-item active" href="/"><span class="nav-icon">▦</span> Overview</a>
+      <div class="sidebar-note">
+        <span class="live-dot"></span>
+        <div><strong>Redis connected</strong><small>Session store online</small></div>
+      </div>
+      <div class="sidebar-bottom">
+        <span class="mini-avatar">SS</span>
+        <div><strong>University project</strong><small>Redis · FastAPI</small></div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">SECURITY / IDENTITY</p>
+          <h1>Session management</h1>
+        </div>
+        <div class="topbar-right">
+          <span class="status-pill"><span class="live-dot"></span> SYSTEM ONLINE</span>
+          <span class="avatar" id="user-avatar">?</span>
+        </div>
+      </header>
+
+      <section id="login-panel" class="login-layout" hidden>
+        <div class="login-card">
+          <div class="login-symbol">⌁</div>
+          <p class="eyebrow">DEMO AUTHENTICATION</p>
+          <h2>Welcome back</h2>
+          <p class="muted">Enter a demo username to create a new Redis-backed session. This project simulates authentication; it does not verify a real password.</p>
+          <form id="login-form">
+            <label for="username">Username</label>
+            <input id="username" name="username" autocomplete="username" minlength="3" maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" placeholder="e.g. oussama" required>
+            <button class="button primary full-width" type="submit">Create secure session <span>→</span></button>
+          </form>
+          <p class="tiny-note">Your session token is stored in an HttpOnly cookie. Redis stores only its SHA-256 digest.</p>
+          <p id="login-error" class="form-error" role="alert"></p>
+        </div>
+        <div class="login-aside">
+          <span class="eyebrow">CENTRALIZED SESSION SERVICE</span>
+          <h2>One place to manage every active session.</h2>
+          <p>Explore session creation, validation, expiration, revocation and simultaneous connections using Redis data structures.</p>
+          <div class="feature-list">
+            <div><span>01</span><strong>Token-based sessions</strong></div>
+            <div><span>02</span><strong>Automatic expiration with TTL</strong></div>
+            <div><span>03</span><strong>Immediate revocation</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="dashboard" hidden>
+        <div class="welcome-row">
+          <div><p class="eyebrow">OVERVIEW</p><h2>Welcome, <span id="welcome-user">user</span></h2><p class="muted">Monitor and control your active sessions.</p></div>
+          <button class="button secondary" id="logout-button" type="button">Sign out this session</button>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card">
+            <div class="metric-heading"><span>ACTIVE SESSIONS</span><span class="metric-icon blue">▣</span></div>
+            <strong class="metric-value" id="active-count">—</strong>
+            <p class="metric-foot">For this user</p>
+          </article>
+          <article class="metric-card">
+            <div class="metric-heading"><span>CURRENT SESSION</span><span class="metric-icon green">◉</span></div>
+            <strong class="metric-value compact" id="current-status">Active</strong>
+            <p class="metric-foot">Validated by Redis</p>
+          </article>
+          <article class="metric-card">
+            <div class="metric-heading"><span>TIME REMAINING</span><span class="metric-icon violet">◷</span></div>
+            <strong class="metric-value" id="current-ttl">—</strong>
+            <p class="metric-foot">Current session TTL</p>
+          </article>
+        </div>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div><p class="eyebrow">DEVICE & ACCESS CONTROL</p><h3>Active sessions</h3></div>
+            <button class="button secondary small" id="refresh-button" type="button">↻ Refresh</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>SESSION</th><th>DEVICE / CLIENT</th><th>IP ADDRESS</th><th>CREATED</th><th>EXPIRES IN</th><th>STATUS</th><th></th></tr></thead>
+              <tbody id="sessions-body"><tr><td colspan="7" class="empty-cell">Loading sessions…</td></tr></tbody>
+            </table>
+          </div>
+          <p id="table-message" class="table-message"></p>
+        </section>
+
+        <section class="bottom-grid">
+          <article class="panel info-panel">
+            <p class="eyebrow">HOW IT WORKS</p>
+            <h3>Redis data structures</h3>
+            <div class="redis-structures">
+              <div><span class="structure-tag hash">HASH</span><div><strong>Session details</strong><small>Identity, creation and expiry timestamps</small></div></div>
+              <div><span class="structure-tag zset">ZSET</span><div><strong>User session index</strong><small>Sessions ordered by expiration time</small></div></div>
+              <div><span class="structure-tag set">SET</span><div><strong>Connected users</strong><small>Unique users with active sessions</small></div></div>
+              <div><span class="structure-tag ttl">TTL</span><div><strong>Automatic expiration</strong><small>Redis removes expired session keys</small></div></div>
+              <div><span class="structure-tag pubsub">PUB/SUB</span><div><strong>Live events</strong><small>Created, revoked and expired events</small></div></div>
+            </div>
+          </article>
+          <article class="panel event-panel">
+            <div class="panel-header compact-header"><div><p class="eyebrow">REAL-TIME</p><h3>Session activity</h3></div><span class="live-label"><span class="live-dot"></span> LIVE</span></div>
+            <div id="event-list" class="event-list"><p class="muted">Waiting for session events…</p></div>
+          </article>
+        </section>
+        <p class="demo-disclaimer">Educational prototype: username authentication is simulated. Do not expose this demo publicly or use it as a production identity provider.</p>
+      </section>
+      <footer class="footer"><span>SECURESESSION · UNIVERSITY NOSQL PROJECT</span><span>POWERED BY REDIS 7 + FASTAPI</span></footer>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,53 @@
+{
+  "info": {
+    "name": "SecureSession API",
+    "description": "Basic API checks for the Redis-backed SecureSession project. Run Create session first; Postman stores the cookie automatically when cookie handling is enabled.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/health"
+      }
+    },
+    {
+      "name": "Create session",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"oussama\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/sessions"
+      }
+    },
+    {
+      "name": "Current session",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/sessions/me"
+      }
+    },
+    {
+      "name": "List sessions",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/sessions"
+      }
+    },
+    {
+      "name": "Logout current session",
+      "request": {
+        "method": "DELETE",
+        "url": "{{baseUrl}}/api/sessions/me"
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8000" }
+  ]
+}
