@@ -1,4 +1,5 @@
 # SecureSession
+<<<<<<< HEAD
 # SecureSession
 
 Centralized User Session Management System.
@@ -13,3 +14,6 @@ Centralized User Session Management System.
 ## Description
 A centralized system for managing user sessions, 
 including session creation, validation, expiration and revocation.
+=======
+Centralized User Session Management System
+>>>>>>> d80ceecd6c0337d3ffcb325482d651eebd28cff8
